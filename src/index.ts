@@ -189,9 +189,31 @@ app.get("/episodes/:id", async (ctx) => {
       .where(eq(episodes.animeId, animeId))
       .orderBy(episodes.number);
 
+    const hianime = episodeData.filter((ep) => ep.provider === "hianime");
+    const gogo = episodeData.filter((ep) => ep.provider === "gogoanime");
+    const hsub = hianime.filter((ep) => ep.type === "sub");
+    const hdub = hianime.filter((ep) => ep.type === "dub");
+    const gsub = gogo.filter((ep) => ep.type === "sub");
+    const gdub = gogo.filter((ep) => ep.type === "dub");
+
     return ctx.json({
-      data: episodeData,
-      total: episodeData.length,
+      episodes: [
+        {
+          data: {
+            sub: gsub,
+            dub: gdub,
+          },
+          providerId: "gogoanime",
+        },
+        {
+          data: {
+            sub: hsub,
+            dub: hdub,
+          },
+          providerId: "hianime",
+        },
+      ],
+      total: gogo.length ?? hianime.length,
     });
   } catch (error) {
     console.error(`Error fetching episodes for anime ID ${id}:`, error);
