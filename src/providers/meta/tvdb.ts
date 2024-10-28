@@ -269,7 +269,7 @@ export interface TVDBEpisode {
   updatedAt: number;
 }
 
-export async function getTVDBEpisode(id: string, year: number) {
+export async function getTVDBEpisode(id: string, year: number, length: number) {
   const token = await getToken(TVDB_KEYS[Math.floor(Math.random() * TVDB_KEYS.length)]);
   if (!token) return undefined;
 
@@ -314,7 +314,7 @@ export async function getTVDBEpisode(id: string, year: number) {
     )
     .filter(Boolean);
 
-  const seasonResponses = await Promise.all(
+  const seasonResponses = (await Promise.all(
     seasonRequests as Promise<
       AxiosResponse<
         {
@@ -343,14 +343,14 @@ export async function getTVDBEpisode(id: string, year: number) {
         any
       >
     >[],
-  );
+  ));
 
   for (const seasonResponse of seasonResponses) {
     if (!seasonResponse) continue;
 
     const seasonInfo = seasonResponse?.data.data;
 
-    if (Number(seasonInfo?.year) !== year) continue;
+    if (Number(seasonInfo?.year) !== Number(year) && seasonInfo?.episodes.length !== length) continue;
 
     const list = seasonInfo?.episodes;
     if (!list) continue;
