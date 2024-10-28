@@ -1,62 +1,68 @@
 import { eq } from "drizzle-orm";
+import type { BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
+import type { MappingAnime, MappingEpisode } from "../mappings/generate";
 import {
-  titles,
-  animes,
-  episodes,
   animeGenres,
   animeStudios,
-  recommendations,
-  relations,
   animeSynonyms,
   animeTags,
-  searchResults,
+  animes,
+  episodes,
   matchResults,
+  recommendations,
+  relations,
+  searchResults,
+  titles,
 } from "./schema";
-import type { MappingAnime, MappingEpisode } from "../mappings/generate";
-import type { BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
 
 export async function insertMappingAnime(
   db: BunSQLiteDatabase,
-  anime: MappingAnime
+  anime: MappingAnime,
 ): Promise<number> {
-  const [titleRow] = await db.insert(titles).values({
-    romaji: anime.title.romaji,
-    native: anime.title.native,
-    english: anime.title.english,
-    userPreferred: anime.title.userPreferred,
-  }).returning({ id: titles.id });
+  const [titleRow] = await db
+    .insert(titles)
+    .values({
+      romaji: anime.title.romaji,
+      native: anime.title.native,
+      english: anime.title.english,
+      userPreferred: anime.title.userPreferred,
+    })
+    .returning({ id: titles.id });
 
-  const [animeRow] = await db.insert(animes).values({
-    id: anime.id,
-    idMal: anime.idMal,
-    titleId: titleRow.id,
-    averageScore: anime.averageScore,
-    bannerImage: anime.bannerImage,
-    countryOfOrigin: anime.countryOfOrigin,
-    coverImage: anime.coverImage,
-    color: anime.color,
-    format: anime.format,
-    duration: anime.duration,
-    description: anime.description,
-    popularity: anime.popularity,
-    season: anime.season,
-    seasonYear: anime.seasonYear,
-    status: anime.status,
-    trending: anime.trending,
-    trailer: anime.trailer,
-    startDate: anime.startDate,
-    endDate: anime.endDate,
-    type: anime.type,
-  }).returning({ id: animes.id });
+  const [animeRow] = await db
+    .insert(animes)
+    .values({
+      id: anime.id,
+      idMal: anime.idMal,
+      titleId: titleRow.id,
+      averageScore: anime.averageScore,
+      bannerImage: anime.bannerImage,
+      countryOfOrigin: anime.countryOfOrigin,
+      coverImage: anime.coverImage,
+      color: anime.color,
+      format: anime.format,
+      duration: anime.duration,
+      description: anime.description,
+      popularity: anime.popularity,
+      season: anime.season,
+      seasonYear: anime.seasonYear,
+      status: anime.status,
+      trending: anime.trending,
+      trailer: anime.trailer,
+      startDate: anime.startDate,
+      endDate: anime.endDate,
+      type: anime.type,
+    })
+    .returning({ id: animes.id });
 
   const insertEpisodes = async (
-    provider: 'hianime' | 'gogoanime',
-    type: 'sub' | 'dub',
-    episodeList: MappingEpisode[]
+    provider: "hianime" | "gogoanime",
+    type: "sub" | "dub",
+    episodeList: MappingEpisode[],
   ) => {
     if (episodeList?.length) {
       await db.insert(episodes).values(
-        episodeList.map(ep => ({
+        episodeList.map((ep) => ({
           id: ep.id,
           description: ep.description,
           animeId: animeRow.id,
@@ -67,37 +73,37 @@ export async function insertMappingAnime(
           rating: ep.rating,
           provider,
           type,
-        }))
+        })),
       );
     }
   };
 
-  await insertEpisodes('hianime', 'sub', anime.streamEpisodes.hianime.sub);
-  await insertEpisodes('hianime', 'dub', anime.streamEpisodes.hianime.dub);
-  await insertEpisodes('gogoanime', 'sub', anime.streamEpisodes.gogoanime.sub);
-  await insertEpisodes('gogoanime', 'dub', anime.streamEpisodes.gogoanime.dub);
+  await insertEpisodes("hianime", "sub", anime.streamEpisodes.hianime.sub);
+  await insertEpisodes("hianime", "dub", anime.streamEpisodes.hianime.dub);
+  await insertEpisodes("gogoanime", "sub", anime.streamEpisodes.gogoanime.sub);
+  await insertEpisodes("gogoanime", "dub", anime.streamEpisodes.gogoanime.dub);
 
   if (anime.genres?.length) {
     await db.insert(animeGenres).values(
-      anime.genres.map(genre => ({
+      anime.genres.map((genre) => ({
         animeId: animeRow.id,
         genre,
-      }))
+      })),
     );
   }
 
   if (anime.studios?.length) {
     await db.insert(animeStudios).values(
-      anime.studios.map(studio => ({
+      anime.studios.map((studio) => ({
         animeId: animeRow.id,
         studio,
-      }))
+      })),
     );
   }
 
   if (anime.recommendations?.length) {
     await db.insert(recommendations).values(
-      anime.recommendations.map(rec => ({
+      anime.recommendations.map((rec) => ({
         animeId: animeRow.id,
         recommendedAnimeId: rec.id,
         title: rec.title,
@@ -105,13 +111,13 @@ export async function insertMappingAnime(
         description: rec.description,
         episodes: rec.episodes,
         status: rec.status,
-      }))
+      })),
     );
   }
 
   if (anime.relations?.length) {
     await db.insert(relations).values(
-      anime.relations.map(relation => ({
+      anime.relations.map((relation) => ({
         animeId: animeRow.id,
         characterName: relation.characterName,
         characterRole: relation.characterRole,
@@ -119,37 +125,40 @@ export async function insertMappingAnime(
         relatedMediaDescription: relation.relatedMedia.description,
         relatedMediaEpisodes: relation.relatedMedia.episodes,
         relatedMediaIdMal: relation.relatedMedia.idMal,
-      }))
+      })),
     );
   }
 
   if (anime.synonyms?.length) {
     await db.insert(animeSynonyms).values(
-      anime.synonyms.map(synonym => ({
+      anime.synonyms.map((synonym) => ({
         animeId: animeRow.id,
         synonym,
-      }))
+      })),
     );
   }
 
   if (anime.tags?.length) {
     await db.insert(animeTags).values(
-      anime.tags.map(tag => ({
+      anime.tags.map((tag) => ({
         animeId: animeRow.id,
         tag,
-      }))
+      })),
     );
   }
 
   if (anime?.mappings?.length) {
     for (const mapping of anime.mappings) {
-      const [searchResultRow] = await db.insert(searchResults).values({
-        id: mapping.bestMatch.id,
-        titleId: titleRow.id,
-        url: mapping.bestMatch.url,
-        image: mapping.bestMatch.image,
-        released: mapping.bestMatch.released,
-      }).returning({ id: searchResults.id });
+      const [searchResultRow] = await db
+        .insert(searchResults)
+        .values({
+          id: mapping.bestMatch.id,
+          titleId: titleRow.id,
+          url: mapping.bestMatch.url,
+          image: mapping.bestMatch.image,
+          released: mapping.bestMatch.released,
+        })
+        .returning({ id: searchResults.id });
 
       await db.insert(matchResults).values({
         animeId: animeRow.id,
@@ -166,7 +175,7 @@ export async function insertMappingAnime(
 
 export async function updateMappingAnime(
   db: BunSQLiteDatabase,
-  anime: MappingAnime
+  anime: MappingAnime,
 ): Promise<void> {
   await db.delete(episodes).where(eq(episodes.animeId, anime.id));
   await db.delete(animeGenres).where(eq(animeGenres.animeId, anime.id));
@@ -176,12 +185,8 @@ export async function updateMappingAnime(
   await db.delete(animeSynonyms).where(eq(animeSynonyms.animeId, anime.id));
   await db.delete(animeTags).where(eq(animeTags.animeId, anime.id));
   await db.delete(matchResults).where(eq(matchResults.animeId, anime.id));
-  
-  const existingAnime = await db
-    .select()
-    .from(animes)
-    .where(eq(animes.id, anime.id))
-    .get();
+
+  const existingAnime = await db.select().from(animes).where(eq(animes.id, anime.id)).get();
 
   if (!existingAnime) {
     throw new Error(`Anime with ID ${anime.id} not found`);

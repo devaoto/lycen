@@ -402,9 +402,8 @@ export interface MappingAnime {
     demographics: MappingGenre[];
   };
   streamEpisodes: MappingEpisodes;
-  mappings: MatchResult[]
+  mappings: MatchResult[];
 }
-
 
 // This function is hella slow. If any of you are expert and can help pls send help.
 export const generateMappings = async (id: number) => {

@@ -28,22 +28,15 @@
           "name": "anime_genres_anime_id_animes_id_fk",
           "tableFrom": "anime_genres",
           "tableTo": "animes",
-          "columnsFrom": [
-            "anime_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["anime_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
         "anime_genres_anime_id_genre_pk": {
-          "columns": [
-            "anime_id",
-            "genre"
-          ],
+          "columns": ["anime_id", "genre"],
           "name": "anime_genres_anime_id_genre_pk"
         }
       },
@@ -74,22 +67,15 @@
           "name": "anime_studios_anime_id_animes_id_fk",
           "tableFrom": "anime_studios",
           "tableTo": "animes",
-          "columnsFrom": [
-            "anime_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["anime_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
         "anime_studios_anime_id_studio_pk": {
-          "columns": [
-            "anime_id",
-            "studio"
-          ],
+          "columns": ["anime_id", "studio"],
           "name": "anime_studios_anime_id_studio_pk"
         }
       },
@@ -120,22 +106,15 @@
           "name": "anime_synonyms_anime_id_animes_id_fk",
           "tableFrom": "anime_synonyms",
           "tableTo": "animes",
-          "columnsFrom": [
-            "anime_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["anime_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
         "anime_synonyms_anime_id_synonym_pk": {
-          "columns": [
-            "anime_id",
-            "synonym"
-          ],
+          "columns": ["anime_id", "synonym"],
           "name": "anime_synonyms_anime_id_synonym_pk"
         }
       },
@@ -166,22 +145,15 @@
           "name": "anime_tags_anime_id_animes_id_fk",
           "tableFrom": "anime_tags",
           "tableTo": "animes",
-          "columnsFrom": [
-            "anime_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["anime_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
         "anime_tags_anime_id_tag_pk": {
-          "columns": [
-            "anime_id",
-            "tag"
-          ],
+          "columns": ["anime_id", "tag"],
           "name": "anime_tags_anime_id_tag_pk"
         }
       },
@@ -354,12 +326,8 @@
           "name": "animes_title_id_titles_id_fk",
           "tableFrom": "animes",
           "tableTo": "titles",
-          "columnsFrom": [
-            "title_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["title_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -456,12 +424,8 @@
           "name": "episodes_anime_id_animes_id_fk",
           "tableFrom": "episodes",
           "tableTo": "animes",
-          "columnsFrom": [
-            "anime_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["anime_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -522,12 +486,8 @@
           "name": "match_results_anime_id_animes_id_fk",
           "tableFrom": "match_results",
           "tableTo": "animes",
-          "columnsFrom": [
-            "anime_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["anime_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -535,12 +495,8 @@
           "name": "match_results_search_result_id_search_results_id_fk",
           "tableFrom": "match_results",
           "tableTo": "search_results",
-          "columnsFrom": [
-            "search_result_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["search_result_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -615,12 +571,8 @@
           "name": "recommendations_anime_id_animes_id_fk",
           "tableFrom": "recommendations",
           "tableTo": "animes",
-          "columnsFrom": [
-            "anime_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["anime_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -695,12 +647,8 @@
           "name": "relations_anime_id_animes_id_fk",
           "tableFrom": "relations",
           "tableTo": "animes",
-          "columnsFrom": [
-            "anime_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["anime_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -754,12 +702,8 @@
           "name": "search_results_title_id_titles_id_fk",
           "tableFrom": "search_results",
           "tableTo": "titles",
-          "columnsFrom": [
-            "title_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["title_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
