@@ -174,6 +174,97 @@ app.get("/info/:id", async (ctx) => {
   });
 });
 
+app.get("/episodes/:id", async (ctx) => {
+  const { id } = ctx.req.param();
+  const animeId = Number(id);
+
+  if (!id || Number.isNaN(animeId)) {
+    return ctx.json({ message: "Invalid or missing 'id' parameter." }, 400);
+  }
+
+  try {
+    const episodeData = await db
+      .select()
+      .from(episodes)
+      .where(eq(episodes.animeId, animeId))
+      .orderBy(episodes.number);
+
+    return ctx.json({
+      data: episodeData,
+      total: episodeData.length,
+    });
+  } catch (error) {
+    console.error(`Error fetching episodes for anime ID ${id}:`, error);
+    return ctx.json({ message: "Internal server error" }, 500);
+  }
+});
+
+app.get("/relations/:id", async (ctx) => {
+  const { id } = ctx.req.param();
+  const animeId = Number(id);
+
+  if (!id || Number.isNaN(animeId)) {
+    return ctx.json({ message: "Invalid or missing 'id' parameter." }, 400);
+  }
+
+  try {
+    const relationData = await db.select().from(relations).where(eq(relations.animeId, animeId));
+
+    return ctx.json({
+      data: relationData,
+      total: relationData.length,
+    });
+  } catch (error) {
+    console.error(`Error fetching relations for anime ID ${id}:`, error);
+    return ctx.json({ message: "Internal server error" }, 500);
+  }
+});
+
+app.get("/relations/:id", async (ctx) => {
+  const { id } = ctx.req.param();
+  const animeId = Number(id);
+
+  if (!id || Number.isNaN(animeId)) {
+    return ctx.json({ message: "Invalid or missing 'id' parameter." }, 400);
+  }
+
+  try {
+    const relationData = await db.select().from(relations).where(eq(relations.animeId, animeId));
+
+    return ctx.json({
+      data: relationData,
+      total: relationData.length,
+    });
+  } catch (error) {
+    console.error(`Error fetching relations for anime ID ${id}:`, error);
+    return ctx.json({ message: "Internal server error" }, 500);
+  }
+});
+
+app.get("/recommendations/:id", async (ctx) => {
+  const { id } = ctx.req.param();
+  const animeId = Number(id);
+
+  if (!id || Number.isNaN(animeId)) {
+    return ctx.json({ message: "Invalid or missing 'id' parameter." }, 400);
+  }
+
+  try {
+    const recommendationData = await db
+      .select()
+      .from(recommendations)
+      .where(eq(recommendations.animeId, animeId));
+
+    return ctx.json({
+      data: recommendationData,
+      total: recommendationData.length,
+    });
+  } catch (error) {
+    console.error(`Error fetching recommendations for anime ID ${id}:`, error);
+    return ctx.json({ message: "Internal server error" }, 500);
+  }
+});
+
 export default {
   fetch: app.fetch,
   port: Number(process.env.PORT) || 6942,
