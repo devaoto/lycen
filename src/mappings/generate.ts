@@ -1,3 +1,4 @@
+import lycen from "../helpers/request";
 import type { MatchResult } from "../helpers/similarity";
 import {
   type GogoEpisode,
@@ -18,7 +19,6 @@ import { type IAnimeData, getEpisodeListMal, getMalAnime } from "../providers/me
 import {
   type TVDBEpisode,
   type TVDBInfoRes,
-  getTVDBEpisode,
   getTVDBInfo,
 } from "../providers/meta/tvdb";
 import { anilistToAniDB } from "./reg/anilist-to-anidb";
@@ -27,6 +27,58 @@ import { anilistToHianime } from "./reg/anilist-to-hianime";
 import { anilistToKitsu } from "./reg/anilist-to-kitsu";
 import { anilistToMalAnime } from "./reg/anilist-to-mal";
 import { anilistToTVDB } from "./reg/anilist-to-tvdb";
+
+interface Titles {
+  "x-jat": string;
+  ja: string;
+  en: string;
+  it: string;
+  he: string;
+  de: string;
+  fr: string;
+  es: string;
+  ru: string;
+  ko: string;
+  ar: string;
+  "zh-Hans": string;
+}
+
+interface EpisodeTitle {
+  ja: string;
+  en: string;
+  fr: string;
+  "x-jat": string;
+}
+
+interface ITVDBEpisode {
+  tvdbShowId: number;
+  tvdbId: number;
+  seasonNumber: number;
+  episodeNumber: number;
+  absoluteEpisodeNumber: number;
+  title: EpisodeTitle;
+  airDate: string;
+  airDateUtc: string;
+  runtime: number;
+  overview: string;
+  image: string;
+  episode: string;
+  anidbEid: number;
+  length: number;
+  airdate: string;
+  rating: string;
+  summary: string;
+}
+
+interface TVDBEpisodes {
+  [key: string]: ITVDBEpisode;
+}
+
+interface Series {
+  titles: Titles;
+  episodes: TVDBEpisodes;
+}
+
 
 export const mergeMappings = (
   tvdbInfo: TVDBInfoRes | undefined,
@@ -224,6 +276,27 @@ export const mergeEpisodes = (
 
   return output;
 };
+
+const getAnizipEpisodes = async (id: number) => {
+  const res = await lycen.get<Series>(`https://api.ani.zip/mappings?anilist_id=${id}`);
+
+  const episodes: TVDBEpisode[] = [];
+
+  for (const episodeKey in res.data.episodes) {
+    const episode = res.data.episodes[episodeKey];
+
+    episodes.push({
+      id: `${episode.tvdbId}`,
+      description: episode.overview ?? episode.summary,
+      image: episode.image,
+      updatedAt: new Date(episode.airDateUtc).getTime(),
+      number: episode.absoluteEpisodeNumber,
+      title: episode.title.en || episode.title["x-jat"] || episode.title.ja
+    })
+  }
+
+  return episodes;
+}
 
 interface MappingTitle {
   romaji: string;
@@ -501,7 +574,7 @@ export const generateMappings = async (id: number) => {
 
   const [tvdbInfo, tvdbEpisode] = await Promise.all([
     safePromise(tvdbId ? getTVDBInfo(tvdbId) : Promise.resolve(undefined)),
-    safePromise(tvdbId ? getTVDBEpisode(tvdbId, anilist.seasonYear) : Promise.resolve(undefined)),
+    safePromise(tvdbId ? getAnizipEpisodes(id): Promise.resolve(undefined)),
   ]);
 
   return {
