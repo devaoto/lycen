@@ -1,5 +1,10 @@
+import { performance } from "node:perf_hooks";
 import { and, eq } from "drizzle-orm";
+import { Hono } from "hono";
+import { cors } from "hono/cors";
+import { prettyJSON } from "hono/pretty-json";
 import { db } from "./db";
+import { insertMappingAnime } from "./db/insert";
 import {
   animeGenres,
   animeStudios,
@@ -13,6 +18,12 @@ import {
   searchResults,
   titles,
 } from "./db/schema";
+import { generateMappings } from "./mappings/generate";
+
+const app = new Hono();
+
+app.use(cors());
+app.use(prettyJSON());
 
 type AnimeWithRelations = {
   anime: typeof animes.$inferSelect;
@@ -133,3 +144,37 @@ export async function animeExists(id: number): Promise<boolean> {
 
   return result.length > 0;
 }
+
+app.get("/", (ctx) => ctx.json({ message: "Lycen API is UP! and running." }));
+
+app.get("/info/:id", async (ctx) => {
+  const { id } = ctx.req.param();
+
+  if (!id || Number.isNaN(Number(id))) {
+    return ctx.json({ message: "Invalid or missing 'id' parameter." });
+  }
+
+  const animeId = Number(id);
+
+  if (await animeExists(animeId)) {
+    return ctx.json(await getAnime(animeId));
+  }
+
+  const startTime = performance.now();
+
+  const anime = await generateMappings(animeId);
+  await insertMappingAnime(db, anime);
+
+  const endTime = performance.now();
+  const totalTime = endTime - startTime;
+
+  return ctx.json({
+    message: "Anime mapped, please re-send the request to get results.",
+    processingTime: `${totalTime.toFixed(2)}ms`,
+  });
+});
+
+export default {
+  fetch: app.fetch,
+  port: Number(process.env.PORT) || 6942,
+};
