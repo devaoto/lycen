@@ -63,9 +63,6 @@ export function findBestMatchedAnime(
     sanitizeTitle(title.english ?? ""),
     sanitizeTitle(title.native ?? ""),
     sanitizeTitle(title.userPreferred ?? ""),
-    ...titles.flatMap(
-      (t) => (t.altTitles as string[] | undefined)?.map((t2) => sanitizeTitle(t2)) || [],
-    ),
   ].filter(Boolean);
 
   if (sanitizedTitleOptions.length === 0) {
