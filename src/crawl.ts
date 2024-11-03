@@ -1,130 +1,122 @@
+import fs from "node:fs/promises";
+import { sleep } from "bun";
 import chalk from "chalk";
-import { eq, not, or } from "drizzle-orm";
-import { createLogger, format, transports } from "winston";
-import { db } from "./db";
-import { insertMappingAnime, updateMappingAnime } from "./db/insert";
-import { animes } from "./db/schema";
+import winston from "winston";
+import { insertAnime } from "./database";
 import lycen from "./helpers/request";
 import { generateMappings } from "./mappings/generate";
 
-const logger = createLogger({
-  format: format.combine(
-    format.timestamp(),
-    format.colorize(),
-    format.printf(({ level, message, timestamp }) => {
-      return `${timestamp} ${level}: ${message}`;
-    }),
+const lastIDFile = "last_id.json";
+const finishedStatus = ["Series Completed", "Discontinued"];
+const CHECK_INTERVAL = 1800000;
+const DELAY = 5000;
+
+const logger = winston.createLogger({
+  level: "info",
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.printf(({ level, message, timestamp }) =>
+      chalk.blue(`[${timestamp}] ${chalk.yellow(level)}: ${message}`),
+    ),
   ),
-  transports: [new transports.Console(), new transports.File({ filename: "crawler.log" })],
+  transports: [
+    new winston.transports.Console(),
+    new winston.transports.File({ filename: "crawler.log" }),
+    new winston.transports.File({ filename: "crawler-error.log", level: "error" }),
+  ],
 });
 
-const processedIds = new Set<number>();
+const loadLastID = async () => {
+  try {
+    const data = await fs.readFile(lastIDFile, "utf8");
+    return JSON.parse(data).lastID || null;
+  } catch (_error) {
+    logger.warn("No last ID file found. Starting from scratch.");
+    return null;
+  }
+};
 
-async function fetchIds(): Promise<number[]> {
+const saveLastID = async (lastID: string) => {
+  try {
+    await fs.writeFile(lastIDFile, JSON.stringify({ lastID }), "utf8");
+  } catch (error) {
+    logger.error("Failed to save last ID:", error);
+  }
+};
+
+const getIds = async () => {
   try {
     const res = await lycen.get<string>(
       "https://raw.githubusercontent.com/5H4D0WILA/IDFetch/main/ids.txt",
     );
-    const ids = res.data
-      .split("\n")
-      .map(Number)
-      .filter((id) => !Number.isNaN(id));
-    logger.info(chalk.blue(`Fetched ${ids.length} IDs from GitHub`));
+    const ids = res.data.split("\n").filter((id) => id.trim() !== "");
+
+    logger.info(`Fetched ${ids.length + 1} IDs`);
+
     return ids;
   } catch (error) {
-    logger.error(chalk.red(`Error fetching IDs: ${(error as Error).message}`));
+    logger.error("Failed to fetch IDs:", error);
     return [];
   }
-}
-
-async function processNewIds(ids: number[]) {
-  const newIds = ids.filter((id) => !processedIds.has(id));
-
-  if (newIds.length === 0) {
-    logger.info(chalk.yellow("No new IDs to process"));
-    return;
-  }
-
-  logger.info(chalk.green(`Processing ${newIds.length} new IDs`));
-
-  for (const id of newIds) {
-    try {
-      const mapping = await generateMappings(id);
-
-      if (mapping) {
-        await insertMappingAnime(db, mapping);
-        processedIds.add(id);
-        logger.info(chalk.green(`Successfully processed ID: ${id}`));
-      }
-    } catch (error) {
-      logger.error(chalk.red(`Error processing ID ${id}: ${(error as Error).message}`));
-    }
-  }
-}
-
-async function updateExistingMappings() {
-  try {
-    const activeAnime = await db
-      .select()
-      .from(animes)
-      .where(
-        not(
-          // @ts-expect-error
-          or(eq(animes.status, "FINISHED"), eq(animes.status, "CANCELLED")),
-        ),
-      );
-
-    logger.info(chalk.blue(`Updating ${activeAnime.length} active anime entries`));
-
-    for (const anime of activeAnime) {
-      try {
-        const mapping = await generateMappings(anime.id);
-
-        if (mapping) {
-          await updateMappingAnime(db, mapping);
-          logger.info(chalk.green(`Successfully updated mapping for ID: ${anime.id}`));
-        }
-      } catch (error) {
-        logger.error(
-          chalk.red(`Error updating mapping for ID ${anime.id}: ${(error as Error).message}`),
-        );
-      }
-    }
-  } catch (error) {
-    logger.error(chalk.red(`Error in updateExistingMappings: ${(error as Error).message}`));
-  }
-}
-
-const crawl = async () => {
-  logger.info(chalk.blue("Starting crawler..."));
-
-  const initialIds = await fetchIds();
-  await processNewIds(initialIds);
-
-  setInterval(
-    async () => {
-      logger.info(chalk.blue("Checking for new IDs..."));
-      const ids = await fetchIds();
-      await processNewIds(ids);
-    },
-    5 * 60 * 1000,
-  ); // 5 minutes
-
-  setInterval(
-    async () => {
-      logger.info(chalk.blue("Starting mapping updates..."));
-      await updateExistingMappings();
-    },
-    60 * 60 * 1000,
-  ); // 1 hour
 };
 
-process.on("uncaughtException", (error) => {
-  logger.error(chalk.red(`Uncaught Exception: ${error.message}`));
-});
+const processAnime = async (id: string, currentIndex: number, total: number) => {
+  try {
+    logger.info(chalk.cyan(`Processing anime ${id} (${currentIndex + 1}/${total})`));
+    const mappings = await generateMappings(Number(id));
 
-process.on("unhandledRejection", (error) => {
-  logger.error(chalk.red(`Unhandled Rejection: ${(error as Error).message}`));
-});
+    if (!(mappings?.id && mappings.title)) {
+      logger.info(
+        chalk.red(
+          `Skipping anime with ID ${id} (${currentIndex + 1}/${total}): missing necessary data.`,
+        ),
+      );
+      return;
+    }
 
-crawl();
+    if (!finishedStatus.includes(mappings.status)) {
+      logger.info(
+        chalk.yellow(
+          `Skipping anime with ID ${id} (${currentIndex + 1}/${total}): status is not FINISHED or CANCELLED.`,
+        ),
+      );
+      return;
+    }
+
+    await insertAnime(mappings);
+    logger.info(
+      chalk.green(
+        `Successfully inserted ${mappings.title.userPreferred} ID: ${id} (${currentIndex + 1}/${total}).`,
+      ),
+    );
+  } catch (error) {
+    logger.error(`Error processing anime ID ${id} (${currentIndex + 1}/${total}):`, error);
+  }
+};
+
+const crawl = async () => {
+  const lastID = await loadLastID();
+  const ids = await getIds();
+
+  const startIndex = lastID ? ids.indexOf(lastID) + 1 : 0;
+  const total = ids.length;
+
+  for (let i = startIndex; i < total; i++) {
+    const id = ids[i];
+    await processAnime(id, i, total + 1);
+    await saveLastID(id);
+    await sleep(DELAY);
+  }
+
+  logger.info("Crawling completed, waiting for next cycle...");
+};
+
+const startCrawlProcess = async () => {
+  await crawl();
+  setInterval(async () => {
+    logger.info("Checking for new IDs to process...");
+    await crawl();
+  }, CHECK_INTERVAL);
+};
+
+export default startCrawlProcess;
