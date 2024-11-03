@@ -18,4 +18,5 @@ export interface Artwork {
   image: string;
   provider: string;
   type: string;
+  lang?: string | null;
 }
