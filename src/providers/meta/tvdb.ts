@@ -186,8 +186,13 @@ interface TVDBInfoResponse {
     artworks: {
       type: number;
       image: string;
+      language: string | null;
     }[];
-    seasons?: { id: string }[];
+    seasons?: {
+      year: string;
+      yearEnd: string;
+      id: string;
+    }[];
     trailers?: { url: string }[];
   };
 }
@@ -242,7 +247,7 @@ export async function getTVDBInfo(id: string): Promise<TVDBInfoRes | undefined> 
           : artworkIds.clearLogo.includes(art.type)
             ? "clear_logo"
             : null;
-      return type ? { type, image: art.image, provider: "tvdb" } : null;
+      return type ? { type, image: art.image, provider: "tvdb", lang: art.language } : null;
     })
     .filter((a) => a !== null) as { type: string; image: string; provider: string }[];
 
@@ -261,12 +266,15 @@ export async function getTVDBInfo(id: string): Promise<TVDBInfoRes | undefined> 
 }
 
 export interface TVDBEpisode {
+  airDate: string | number | Date;
   id: string;
   description: string;
   title: string;
   image: string;
   number: number;
+  seasonNumber: number;
   updatedAt: number;
+  [key: string]: unknown;
 }
 
 export async function getTVDBEpisode(id: string, year: number, length: number) {
@@ -283,7 +291,9 @@ export async function getTVDBEpisode(id: string, year: number, length: number) {
 
   const infoSeasons = res.data.seasons;
 
-  const seasonRequests = infoSeasons
+  const relevantSeasons = infoSeasons;
+
+  const seasonRequests = relevantSeasons
     ?.map((season) =>
       lycen.get<{
         data: {
@@ -314,7 +324,7 @@ export async function getTVDBEpisode(id: string, year: number, length: number) {
     )
     .filter(Boolean);
 
-  const seasonResponses = (await Promise.all(
+  const seasonResponses = await Promise.all(
     seasonRequests as Promise<
       AxiosResponse<
         {
@@ -343,19 +353,28 @@ export async function getTVDBEpisode(id: string, year: number, length: number) {
         any
       >
     >[],
-  ));
+  );
 
   for (const seasonResponse of seasonResponses) {
     if (!seasonResponse) continue;
 
     const seasonInfo = seasonResponse?.data.data;
 
-    if (Number(seasonInfo?.year) !== Number(year) && seasonInfo?.episodes.length !== length) continue;
+    const seasonMatches =
+      (Number(seasonInfo?.year) === Number(year) ||
+        seasonInfo?.episodes.some((ep) => new Date(ep.aired).getFullYear() === year)) &&
+      Math.abs(seasonInfo?.episodes.length - length) <= 1;
+
+    if (!seasonMatches) continue;
 
     const list = seasonInfo?.episodes;
     if (!list) continue;
 
-    const translationRequests = list.map((episode) =>
+    const relevantEpisodes = list.filter(
+      (episode) => new Date(episode.aired).getFullYear() === year,
+    );
+
+    const translationRequests = relevantEpisodes.map((episode) =>
       lycen
         .get<{
           data: {
@@ -392,8 +411,8 @@ export async function getTVDBEpisode(id: string, year: number, length: number) {
 
     const translationResponses = await Promise.all(translationRequests);
 
-    for (let i = 0; i < list.length; i++) {
-      const episode = list[i];
+    for (let i = 0; i < relevantEpisodes.length; i++) {
+      const episode = relevantEpisodes[i];
       // @ts-expect-error
       const translations = translationResponses[i]?.data.data;
 
@@ -404,14 +423,30 @@ export async function getTVDBEpisode(id: string, year: number, length: number) {
         number: episode.number,
         title: translations.name ?? "TBD",
         updatedAt: new Date(episode.aired).getTime(),
+        seasonNumber: episode.seasonNumber,
+        airDate: new Date(episode.aired).toISOString(),
       });
     }
   }
 
-  const episodeNumbers = episodes.map((episode) => episode.number);
-  const filteredEpisodes = episodes.filter(
-    (episode, index) => episodeNumbers.indexOf(episode.number) === index,
-  );
+  const uniqueEpisodes = episodes.reduce((acc, current) => {
+    const existingEpisode = acc.find(
+      (ep) => ep.number === current.number && ep.seasonNumber === current.seasonNumber,
+    );
 
-  return filteredEpisodes;
+    if (!existingEpisode) {
+      acc.push(current);
+    } else {
+      const existingYearDiff = Math.abs(new Date(existingEpisode.airDate).getFullYear() - year);
+      const currentYearDiff = Math.abs(new Date(current.airDate).getFullYear() - year);
+
+      if (currentYearDiff < existingYearDiff) {
+        const index = acc.indexOf(existingEpisode);
+        acc[index] = current;
+      }
+    }
+    return acc;
+  }, [] as TVDBEpisode[]);
+
+  return uniqueEpisodes.sort((a, b) => a.number - b.number);
 }
