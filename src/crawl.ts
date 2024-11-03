@@ -9,7 +9,7 @@ import { generateMappings } from "./mappings/generate";
 const lastIDFile = "last_id.json";
 const finishedStatus = ["Series Completed", "Discontinued"];
 const CHECK_INTERVAL = 1800000;
-const DELAY = 5000;
+const DELAY = 1000;
 
 const logger = winston.createLogger({
   level: "info",
