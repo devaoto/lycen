@@ -125,6 +125,11 @@ class LycenRequest {
 
       config.headers = {
         ...config.headers,
+        Origin: "ayoko.fun",
+      } as unknown as AxiosRequestHeaders;
+
+      config.headers = {
+        ...config.headers,
         "User-Agent": getRandomUserAgent(),
       } as AxiosRequestHeaders;
 
