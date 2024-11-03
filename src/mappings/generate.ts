@@ -29,6 +29,7 @@ import { anilistToKitsu } from "./reg/anilist-to-kitsu";
 import { anilistToMalAnime } from "./reg/anilist-to-mal";
 import { anilistToTmdb } from "./reg/anilist-to-tmdb";
 import { anilistToTVDB } from "./reg/anilist-to-tvdb";
+import type { Artwork } from "../types";
 
 const convertStatus = (status: string) => {
   switch (status.toUpperCase()) {
@@ -394,6 +395,7 @@ export interface MappingAnime {
   characters: IParsedCharacter[];
   recommendations: MappingRecommendation[];
   relations: MappingRelation[];
+  artworks: Artwork[];
   data: {
     mal_id: number;
     url: string;

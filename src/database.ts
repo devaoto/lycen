@@ -34,6 +34,7 @@ const AnimeSchema = new Schema({
   data: Schema.Types.Mixed,
   streamEpisodes: Schema.Types.Mixed,
   mappings: Schema.Types.Mixed,
+  artworks: Schema.Types.Mixed,
 });
 
 AnimeSchema.index({ idMal: 1 });
