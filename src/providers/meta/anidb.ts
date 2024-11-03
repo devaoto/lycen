@@ -44,9 +44,17 @@ export interface Episode {
   updatedAt?: number;
 }
 
-export const anidbSearch = async (query: string) => {
+const formatMapping = {
+  MOVIE: "type.movie=1",
+  MUSIC: "type.musicvideo=1",
+  OVA: "type.ova=1",
+  TV: "type.tvseries=1",
+  SPECIAL: "type.tvspecial=1",
+};
+
+export const anidbSearch = async (query: string, format?: string) => {
   const res = await lycen.get<string>(
-    `${ANIDB_URL}/search/fulltext/?adb.search=${encodeURIComponent(query)}&do.search=1&entity.animetb=1&field.titles=1`,
+    `${ANIDB_URL}/search/fulltext/?adb.search=${encodeURIComponent(query)}&do.search=1&entity.animetb=1&field.titles=1${format ? `&${formatMapping[format?.toUpperCase() as keyof typeof formatMapping]}` : ""}`,
   );
   const data = res.data;
 

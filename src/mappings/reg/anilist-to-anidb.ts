@@ -6,7 +6,7 @@ import { getInfo } from "../../providers/meta/anilist";
 export const anilistToAniDB = async (id: number) => {
   const info = await getInfo(id);
 
-  const res = await anidbSearch(cleanTitle(info.title.userPreferred));
+  const res = await anidbSearch(cleanTitle(info.title.userPreferred), info.format);
 
   const matched = findBestMatchedAnime(info.title, res);
 
