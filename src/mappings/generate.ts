@@ -22,6 +22,7 @@ import {
   getTVDBEpisode,
   getTVDBInfo,
 } from "../providers/meta/tvdb";
+import type { Artwork } from "../types";
 import { anilistToAniDB } from "./reg/anilist-to-anidb";
 import { anilistToGogo } from "./reg/anilist-to-gogo";
 import { anilistToHianime } from "./reg/anilist-to-hianime";
@@ -29,7 +30,6 @@ import { anilistToKitsu } from "./reg/anilist-to-kitsu";
 import { anilistToMalAnime } from "./reg/anilist-to-mal";
 import { anilistToTmdb } from "./reg/anilist-to-tmdb";
 import { anilistToTVDB } from "./reg/anilist-to-tvdb";
-import type { Artwork } from "../types";
 
 const convertStatus = (status: string) => {
   switch (status.toUpperCase()) {
@@ -378,6 +378,7 @@ export interface MappingAnime {
   format: string;
   genres: string[];
   episodes: number;
+  currentEpisodes: number;
   duration: number;
   description: string;
   popularity: number;

@@ -14,6 +14,7 @@ const AnimeSchema = new Schema({
   format: String,
   genres: [String],
   episodes: Number,
+  currentEpisodes: Number,
   duration: Number,
   description: String,
   popularity: Number,

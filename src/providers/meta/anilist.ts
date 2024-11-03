@@ -25,6 +25,10 @@ const infoQuery = `
       format
       genres
       episodes
+      nextAiringEpisode {
+        episode
+        airingAt
+      }
       duration
       description
       popularity
@@ -197,6 +201,11 @@ interface IDate {
   day: number;
 }
 
+interface INextAiringEpisode {
+  episode: number;
+  airingAt: number;
+}
+
 // Main interfaces with proper typing
 interface ICharacter {
   age?: number;
@@ -258,6 +267,7 @@ interface IInfo {
   format: string;
   genres: string[];
   episodes: number;
+  nextAiringEpisode: INextAiringEpisode | null;
   duration: number;
   description: string;
   popularity: number;
@@ -347,6 +357,8 @@ interface IParsedMediaInfo {
   format: string;
   genres: string[];
   episodes: number;
+  currentEpisodes: number;
+  nextEpisodeAiringAt: number | null;
   duration: number;
   description: string;
   popularity: number;
@@ -376,6 +388,10 @@ const parseMediaInfo = (media: IInfo): IParsedMediaInfo => {
     return `${year}-${month.toString().padStart(2, "0")}-${day.toString().padStart(2, "0")}`;
   };
 
+  const currentEpisodes = media.nextAiringEpisode
+    ? media.nextAiringEpisode.episode - 1
+    : media.episodes || 0;
+
   return {
     title: media.title,
     averageScore: media.averageScore,
@@ -388,6 +404,8 @@ const parseMediaInfo = (media: IInfo): IParsedMediaInfo => {
     format: media.format,
     genres: media.genres,
     episodes: media.episodes,
+    currentEpisodes,
+    nextEpisodeAiringAt: media.nextAiringEpisode?.airingAt || null,
     duration: media.duration,
     description: media.description,
     popularity: media.popularity,
