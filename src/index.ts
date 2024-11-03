@@ -139,6 +139,21 @@ app.get("/", async (ctx) =>
   ctx.json({ message: "Welcome to Lycen API.", totalAnimes: (await getAllAnime()).length }),
 );
 
+app.get("/clear_cache", async (ctx) => {
+  const secret = ctx.req.query("secret");
+
+  if (!secret) throw new HTTPException(400, { message: "Secret Key is required" });
+
+  if (secret !== process.env.SECRET_KEY)
+    throw new HTTPException(401, { message: "Invalid secret key" });
+
+  await deleteAllKeys();
+
+  return ctx.json({
+    message: "Successfully cleared all cache",
+  });
+});
+
 app.get("/delete_all", async (ctx) => {
   const secret = ctx.req.query("secret");
   const deleteKeys = ctx.req.query("cache") === "true";
@@ -327,6 +342,7 @@ app.get("/search", async (ctx) => {
 
 export default {
   fetch: app.fetch,
+  idleTimeout: 4 * 60,
   port: Number.isNaN(Number(process.env.PORT)) ? 6942 : Number(process.env.PORT),
 };
 
