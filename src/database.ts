@@ -78,7 +78,7 @@ const insertAnime = async (animeData: MappingAnime) => {
   try {
     const newAnime = new Anime(animeData);
     await newAnime.save();
-    return newAnime.id;
+    return await getAnime(newAnime.id);
   } catch (error) {
     throw new Error(`Error inserting anime: ${(error as Error).message}`);
   }
