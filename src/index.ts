@@ -1,293 +1,335 @@
-import { performance } from "node:perf_hooks";
-import { and, eq } from "drizzle-orm";
+import chalk from "chalk";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { HTTPException } from "hono/http-exception";
 import { prettyJSON } from "hono/pretty-json";
-import { db } from "./db";
-import { insertMappingAnime } from "./db/insert";
+import { timeout } from "hono/timeout";
+import Redis from "ioredis";
+import mongoose from "mongoose";
+import winston from "winston";
 import {
-  animeGenres,
-  animeStudios,
-  animeSynonyms,
-  animeTags,
-  animes,
-  episodes,
-  matchResults,
-  recommendations,
-  relations,
-  searchResults,
-  titles,
-} from "./db/schema";
+  // Schema
+  Anime,
+  deleteAllAnime,
+  getAllAnime,
+  getAnime,
+  insertAnime,
+} from "./database";
 import { generateMappings } from "./mappings/generate";
+
+const customFormat = winston.format.combine(
+  winston.format.timestamp(),
+  winston.format.printf(({ level, message, timestamp, ...metadata }) => {
+    let msg = `[${timestamp}] ${level.toUpperCase()}: ${message}`;
+
+    if (Object.keys(metadata).length > 0) {
+      msg += ` ${JSON.stringify(metadata)}`;
+    }
+
+    if (process.stdout.isTTY) {
+      return chalk.blue(`${msg}`);
+    }
+    return msg;
+  }),
+);
+
+const winstonLogger = winston.createLogger({
+  level: "info",
+  format: customFormat,
+  transports: [
+    new winston.transports.Console(),
+    new winston.transports.File({
+      filename: "server.log",
+      format: winston.format.combine(winston.format.uncolorize(), customFormat),
+    }),
+    new winston.transports.File({
+      filename: "server-error.log",
+      level: "error",
+      format: winston.format.combine(winston.format.uncolorize(), customFormat),
+    }),
+  ],
+});
+
+if (!(process.env.DATABASE_URI && process.env.REDIS_HOST && process.env.REDIS_PASSWORD)) {
+  winstonLogger.error("Database URI, Redis host, and Redis password are required.");
+  process.exit(1);
+}
+
+const redis = new Redis({
+  host: process.env.REDIS_HOST,
+  password: process.env.REDIS_PASSWORD,
+});
+
+await mongoose.connect(process.env.DATABASE_URI);
+
+winstonLogger.info("Successfully connected to different databases", {
+  databases: [{ name: "Redis" }, { name: "MongoDB" }],
+});
 
 const app = new Hono();
 
 app.use(cors());
 app.use(prettyJSON());
+app.use(timeout(5 * 60 * 1000));
 
-type AnimeWithRelations = {
-  anime: typeof animes.$inferSelect;
-  title: typeof titles.$inferSelect;
-  episodes: (typeof episodes.$inferSelect)[];
-  genres: string[];
-  studios: string[];
-  recommendations: (typeof recommendations.$inferSelect)[];
-  relations: (typeof relations.$inferSelect)[];
-  synonyms: string[];
-  tags: string[];
-  searchResults: {
-    result: typeof searchResults.$inferSelect;
-    matches: (typeof matchResults.$inferSelect)[];
-  }[];
-};
+app.use("*", async (ctx, next) => {
+  const start = Date.now();
+  const requestId = crypto.randomUUID();
 
-export async function getAnime(id: number): Promise<AnimeWithRelations | null> {
+  const ip =
+    ctx.req.header("x-forwarded-for") ||
+    ctx.req.header("x-real-ip") ||
+    ctx.req.header("cf-connecting-ip") ||
+    (ctx.env as { cf: { ip: string } })?.cf?.ip ||
+    "unknown";
+
+  winstonLogger.info(`Incoming ${ctx.req.method} request`, {
+    requestId,
+    path: ctx.req.path,
+    ip,
+    userAgent: ctx.req.header("user-agent"),
+    referer: ctx.req.header("referer"),
+  });
+
   try {
-    const animeData = await db
-      .select()
-      .from(animes)
-      .where(eq(animes.id, id))
-      .leftJoin(titles, eq(animes.titleId, titles.id))
-      .limit(1);
+    await next();
 
-    if (!animeData || animeData.length === 0) {
-      return null;
-    }
-
-    const [{ animes: anime, titles: title }] = animeData;
-
-    const episodeData = await db
-      .select()
-      .from(episodes)
-      .where(eq(episodes.animeId, id))
-      .orderBy(episodes.number);
-
-    const genreData = await db.select().from(animeGenres).where(eq(animeGenres.animeId, id));
-
-    const studioData = await db.select().from(animeStudios).where(eq(animeStudios.animeId, id));
-
-    const recommendationData = await db
-      .select()
-      .from(recommendations)
-      .where(eq(recommendations.animeId, id));
-
-    const relationData = await db.select().from(relations).where(eq(relations.animeId, id));
-
-    const synonymData = await db.select().from(animeSynonyms).where(eq(animeSynonyms.animeId, id));
-
-    const tagData = await db.select().from(animeTags).where(eq(animeTags.animeId, id));
-
-    const searchResultData = await db
-      .select()
-      .from(searchResults)
-      .innerJoin(
-        matchResults,
-        and(eq(matchResults.animeId, id), eq(matchResults.searchResultId, searchResults.id)),
-      )
-      .orderBy(matchResults.similarity);
-
-    const formattedSearchResults = searchResultData.reduce<{
-      [key: string]: {
-        result: typeof searchResults.$inferSelect;
-        matches: (typeof matchResults.$inferSelect)[];
-      };
-    }>((acc, { search_results, match_results }) => {
-      if (!acc[search_results.id]) {
-        acc[search_results.id] = {
-          result: search_results,
-          matches: [],
-        };
-      }
-      acc[search_results.id].matches.push(match_results);
-      return acc;
-    }, {});
-
-    const response: AnimeWithRelations = {
-      anime,
-      // @ts-expect-error
-      title,
-      episodes: episodeData,
-      genres: genreData.map((g) => g.genre),
-      studios: studioData.map((s) => s.studio),
-      recommendations: recommendationData,
-      relations: relationData,
-      synonyms: synonymData.map((s) => s.synonym),
-      tags: tagData.map((t) => t.tag),
-      searchResults: Object.values(formattedSearchResults),
-    };
-
-    return response;
+    const responseTime = Date.now() - start;
+    winstonLogger.info("Request completed", {
+      requestId,
+      path: ctx.req.path,
+      method: ctx.req.method,
+      status: ctx.res.status,
+      responseTime: `${responseTime}ms`,
+    });
   } catch (error) {
-    console.error(`Error fetching anime with ID ${id}:`, error);
+    const responseTime = Date.now() - start;
+    winstonLogger.error("Request failed", {
+      requestId,
+      path: ctx.req.path,
+      method: ctx.req.method,
+      error: (error as Error).message,
+      stack: (error as Error).stack,
+      responseTime: `${responseTime}ms`,
+    });
+
     throw error;
   }
-}
+});
 
-export async function getMultipleAnime(ids: number[]): Promise<AnimeWithRelations[]> {
-  const animePromises = ids.map((id) => getAnime(id));
-  const results = await Promise.all(animePromises);
-  return results.filter((result): result is AnimeWithRelations => result !== null);
-}
+async function deleteAllKeys(): Promise<void> {
+  const keys = await redis.keys("*");
 
-export async function getAnimeByMalId(malId: number): Promise<AnimeWithRelations | null> {
-  const animeData = await db.select().from(animes).where(eq(animes.idMal, malId)).limit(1);
-
-  if (!animeData || animeData.length === 0) {
-    return null;
+  if (keys.length === 0) {
+    // biome-ignore lint/suspicious/noConsoleLog: <explanation>
+    console.log("No keys to delete!");
+    return;
   }
 
-  return getAnime(animeData[0].id);
+  const pipeline = redis.pipeline();
+  // biome-ignore lint/complexity/noForEach: <explanation>
+  keys.forEach((key) => pipeline.del(key));
+
+  await pipeline.exec();
+  // biome-ignore lint/suspicious/noConsoleLog: <explanation>
+  console.log(`Deleted ${keys.length} keys from cache!`);
 }
 
-export async function animeExists(id: number): Promise<boolean> {
-  const result = await db.select({ id: animes.id }).from(animes).where(eq(animes.id, id)).limit(1);
+app.get("/", async (ctx) =>
+  ctx.json({ message: "Welcome to Lycen API.", totalAnimes: (await getAllAnime()).length }),
+);
 
-  return result.length > 0;
-}
+app.get("/delete_all", async (ctx) => {
+  const secret = ctx.req.query("secret");
+  const deleteKeys = ctx.req.query("cache") === "true";
 
-app.get("/", (ctx) => ctx.json({ message: "Lycen API is UP! and running." }));
+  if (!secret) throw new HTTPException(400, { message: "Secret Key is required" });
+
+  if (secret !== process.env.SECRET_KEY)
+    throw new HTTPException(401, { message: "Invalid secret key" });
+
+  await deleteAllAnime();
+
+  if (deleteKeys) {
+    await deleteAllKeys();
+  }
+
+  return ctx.json({
+    message: `Successfully deleted all anime${deleteKeys ? " including cache" : ""}`,
+  });
+});
 
 app.get("/info/:id", async (ctx) => {
   const { id } = ctx.req.param();
 
-  if (!id || Number.isNaN(Number(id))) {
-    return ctx.json({ message: "Invalid or missing 'id' parameter." });
+  if (!id) throw new HTTPException(400, { message: "ID is required." });
+
+  const cacheKey = `ani:${id}`;
+  const cachedData = await redis.get(cacheKey);
+
+  if (cachedData) {
+    return ctx.json(JSON.parse(cachedData));
   }
 
-  const animeId = Number(id);
+  const anime = await getAnime(id);
 
-  if (await animeExists(animeId)) {
-    return ctx.json(await getAnime(animeId));
+  if (!anime?.id) {
+    const mapping = await generateMappings(Number(id));
+    const validStatus = ["Series Completed", "Discontinued"];
+
+    if (mapping.id) {
+      const cacheTTL = validStatus.includes(mapping.status) ? 30 * 24 * 60 * 60 : 12 * 60 * 60;
+      await redis.setex(cacheKey, cacheTTL, JSON.stringify(mapping));
+
+      if (validStatus.includes(mapping.status)) {
+        const updated = await insertAnime(mapping);
+        return ctx.json(updated);
+      }
+
+      return ctx.json(mapping);
+    }
+
+    return ctx.json({ message: "Anime not found" }, 404);
   }
 
-  const startTime = performance.now();
-
-  const anime = await generateMappings(animeId);
-  await insertMappingAnime(db, anime);
-
-  const endTime = performance.now();
-  const totalTime = endTime - startTime;
-
-  return ctx.json({
-    message: "Anime mapped, please re-send the request to get results.",
-    processingTime: `${totalTime.toFixed(2)}ms`,
-  });
+  await redis.setex(cacheKey, 12 * 60 * 60, JSON.stringify(anime));
+  return ctx.json(anime);
 });
 
-app.get("/episodes/:id", async (ctx) => {
-  const { id } = ctx.req.param();
-  const animeId = Number(id);
-
-  if (!id || Number.isNaN(animeId)) {
-    return ctx.json({ message: "Invalid or missing 'id' parameter." }, 400);
-  }
-
+app.get("/search", async (ctx) => {
   try {
-    const episodeData = await db
-      .select()
-      .from(episodes)
-      .where(eq(episodes.animeId, animeId))
-      .orderBy(episodes.number);
+    // Extract query parameters
+    const {
+      q,
+      genres,
+      tags,
+      season,
+      status,
+      id,
+      idMal,
+      fields,
+      page = "1",
+      limit = "20",
+    } = ctx.req.query();
 
-    const hianime = episodeData.filter((ep) => ep.provider === "hianime");
-    const gogo = episodeData.filter((ep) => ep.provider === "gogoanime");
-    const hsub = hianime.filter((ep) => ep.type === "sub");
-    const hdub = hianime.filter((ep) => ep.type === "dub");
-    const gsub = gogo.filter((ep) => ep.type === "sub");
-    const gdub = gogo.filter((ep) => ep.type === "dub");
+    const currentPage = Math.max(1, Number(page));
+    const itemsPerPage = Math.min(50, Math.max(1, Number(limit)));
+    const skip = (currentPage - 1) * itemsPerPage;
 
-    return ctx.json({
-      episodes: [
-        {
-          data: {
-            sub: gsub,
-            dub: gdub,
-          },
-          providerId: "gogoanime",
+    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+    const query: any = {};
+
+    if (q) {
+      query.$or = [
+        { "title.english": { $regex: q, $options: "i" } },
+        { "title.romaji": { $regex: q, $options: "i" } },
+        { synonyms: { $regex: q, $options: "i" } },
+      ];
+    }
+
+    if (genres) {
+      const genreList = genres.split(",").map((g) => g.trim());
+      query.genres = { $all: genreList };
+    }
+
+    if (tags) {
+      const tagList = tags.split(",").map((t) => t.trim());
+      query.tags = { $all: tagList };
+    }
+
+    if (season) {
+      query.season = season.toUpperCase();
+    }
+
+    if (status) {
+      query.status = status;
+    }
+
+    if (id) {
+      query.id = Number(id);
+    }
+
+    if (idMal) {
+      query.idMal = Number(idMal);
+    }
+
+    const defaultFields = {
+      title: 1,
+      id: 1,
+      bannerImage: 1,
+      coverImage: 1,
+      status: 1,
+      format: 1,
+      season: 1,
+      genres: 1,
+      tags: 1,
+      synonyms: 1,
+      idMal: 1,
+      _id: 0,
+    };
+
+    let projection = defaultFields;
+    if (fields) {
+      projection = fields.split(",").reduce(
+        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+        (acc: any, field) => {
+          acc[field.trim()] = 1;
+          return acc;
         },
-        {
-          data: {
-            sub: hsub,
-            dub: hdub,
-          },
-          providerId: "hianime",
-        },
-      ],
-      total: gogo.length ?? hianime.length,
-    });
+        { _id: 0 },
+      );
+    }
+
+    const total = await Anime.countDocuments(query);
+
+    const results = await Anime.find(query, projection).skip(skip).limit(itemsPerPage).lean();
+
+    const cacheKey = `search:${JSON.stringify({
+      q,
+      genres,
+      tags,
+      season,
+      status,
+      id,
+      idMal,
+      fields,
+      page,
+      limit,
+    })}`;
+
+    const cachedData = await redis.get(cacheKey);
+    if (cachedData) {
+      return ctx.json(JSON.parse(cachedData));
+    }
+
+    const response = {
+      pagination: {
+        currentPage,
+        hasNextPage: skip + results.length < total,
+        totalItems: total,
+        totalPages: Math.ceil(total / itemsPerPage),
+        itemsPerPage,
+      },
+      results,
+    };
+
+    await redis.setex(cacheKey, 3600, JSON.stringify(response));
+
+    return ctx.json(response);
   } catch (error) {
-    console.error(`Error fetching episodes for anime ID ${id}:`, error);
-    return ctx.json({ message: "Internal server error" }, 500);
-  }
-});
-
-app.get("/relations/:id", async (ctx) => {
-  const { id } = ctx.req.param();
-  const animeId = Number(id);
-
-  if (!id || Number.isNaN(animeId)) {
-    return ctx.json({ message: "Invalid or missing 'id' parameter." }, 400);
-  }
-
-  try {
-    const relationData = await db.select().from(relations).where(eq(relations.animeId, animeId));
-
-    return ctx.json({
-      data: relationData,
-      total: relationData.length,
+    winstonLogger.error("Search error", {
+      error: (error as Error).message,
+      stack: (error as Error).stack,
     });
-  } catch (error) {
-    console.error(`Error fetching relations for anime ID ${id}:`, error);
-    return ctx.json({ message: "Internal server error" }, 500);
-  }
-});
-
-app.get("/relations/:id", async (ctx) => {
-  const { id } = ctx.req.param();
-  const animeId = Number(id);
-
-  if (!id || Number.isNaN(animeId)) {
-    return ctx.json({ message: "Invalid or missing 'id' parameter." }, 400);
-  }
-
-  try {
-    const relationData = await db.select().from(relations).where(eq(relations.animeId, animeId));
-
-    return ctx.json({
-      data: relationData,
-      total: relationData.length,
-    });
-  } catch (error) {
-    console.error(`Error fetching relations for anime ID ${id}:`, error);
-    return ctx.json({ message: "Internal server error" }, 500);
-  }
-});
-
-app.get("/recommendations/:id", async (ctx) => {
-  const { id } = ctx.req.param();
-  const animeId = Number(id);
-
-  if (!id || Number.isNaN(animeId)) {
-    return ctx.json({ message: "Invalid or missing 'id' parameter." }, 400);
-  }
-
-  try {
-    const recommendationData = await db
-      .select()
-      .from(recommendations)
-      .where(eq(recommendations.animeId, animeId));
-
-    return ctx.json({
-      data: recommendationData,
-      total: recommendationData.length,
-    });
-  } catch (error) {
-    console.error(`Error fetching recommendations for anime ID ${id}:`, error);
-    return ctx.json({ message: "Internal server error" }, 500);
+    throw new HTTPException(500, { message: "Internal server error during search" });
   }
 });
 
 export default {
   fetch: app.fetch,
-  port: Number(process.env.PORT) || 6942,
+  port: Number.isNaN(Number(process.env.PORT)) ? 6942 : Number(process.env.PORT),
 };
+
+winstonLogger.info("Server successfully started", {
+  port: Number.isNaN(Number(process.env.PORT)) ? 6942 : Number(process.env.PORT),
+});
