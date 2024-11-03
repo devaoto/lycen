@@ -302,7 +302,7 @@ interface IInfo {
   };
 }
 
-interface IParsedCharacter {
+export interface IParsedCharacter {
   name: string;
   role: string;
   image: string;
@@ -356,11 +356,7 @@ interface IParsedMediaInfo {
   synonyms: string[];
   tags: { name: string; category: string }[];
   trending: number;
-  trailer: {
-    id: string;
-    site: string;
-    thumbnail: string;
-  } | null;
+  trailer: string;
   startDate: string | null;
   endDate: string | null;
   studios: string[];
@@ -401,7 +397,7 @@ const parseMediaInfo = (media: IInfo): IParsedMediaInfo => {
     synonyms: media.synonyms,
     tags: media.tags.map((t) => ({ name: t.name, category: t.category })),
     trending: media.trending,
-    trailer: media.trailer,
+    trailer: `https://www.youtube.com/watch?v=${media.trailer?.id}`,
     startDate: formatDate(media.startDate),
     endDate: formatDate(media.endDate),
     studios: media.studios.edges.map((edge) => edge.node.name),
