@@ -400,7 +400,7 @@ export async function getTVDBEpisode(id: string, year: number, length: number) {
           },
         })
         .catch(() => ({
-          json: async () => ({
+          data: async () => ({
             data: {
               name: episode.name,
               overview: episode.overview,
@@ -414,14 +414,17 @@ export async function getTVDBEpisode(id: string, year: number, length: number) {
     for (let i = 0; i < relevantEpisodes.length; i++) {
       const episode = relevantEpisodes[i];
       // @ts-expect-error
-      const translations = translationResponses[i]?.data.data;
+      const translations = translationResponses[i]?.data.data
+      
 
       episodes.push({
         id: String(episode.id),
-        description: translations.overview ?? "TBD",
+        // biome-ignore lint/complexity/useOptionalChain: <explanation>
+        description: translations && translations.overview ? translations.overview : "TBD",
         image: episode.image as string,
         number: episode.number,
-        title: translations.name ?? "TBD",
+        // biome-ignore lint/complexity/useOptionalChain: <explanation>
+        title: translations && translations.name ? translations.name : "TBD",
         updatedAt: new Date(episode.aired).getTime(),
         seasonNumber: episode.seasonNumber,
         airDate: new Date(episode.aired).toISOString(),
