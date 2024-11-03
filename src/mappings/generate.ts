@@ -1,4 +1,3 @@
-import lycen from "../helpers/request";
 import type { MatchResult } from "../helpers/similarity";
 import {
   type GogoEpisode,
@@ -13,12 +12,14 @@ import {
   fetchEpisodeList,
   getAnidbInfo,
 } from "../providers/meta/anidb";
-import { type IParsedMediaInfo, getInfo } from "../providers/meta/anilist";
+import { type IParsedCharacter, type IParsedMediaInfo, getInfo } from "../providers/meta/anilist";
 import { type KitsuInfo, getKitsuInfo } from "../providers/meta/kitsu";
 import { type IAnimeData, getEpisodeListMal, getMalAnime } from "../providers/meta/mal";
+import { type TMDBInfo, getTMDBEpisode, getTMDBInfo } from "../providers/meta/tmdb";
 import {
   type TVDBEpisode,
   type TVDBInfoRes,
+  getTVDBEpisode,
   getTVDBInfo,
 } from "../providers/meta/tvdb";
 import { anilistToAniDB } from "./reg/anilist-to-anidb";
@@ -26,59 +27,26 @@ import { anilistToGogo } from "./reg/anilist-to-gogo";
 import { anilistToHianime } from "./reg/anilist-to-hianime";
 import { anilistToKitsu } from "./reg/anilist-to-kitsu";
 import { anilistToMalAnime } from "./reg/anilist-to-mal";
+import { anilistToTmdb } from "./reg/anilist-to-tmdb";
 import { anilistToTVDB } from "./reg/anilist-to-tvdb";
 
-interface Titles {
-  "x-jat": string;
-  ja: string;
-  en: string;
-  it: string;
-  he: string;
-  de: string;
-  fr: string;
-  es: string;
-  ru: string;
-  ko: string;
-  ar: string;
-  "zh-Hans": string;
-}
-
-interface EpisodeTitle {
-  ja: string;
-  en: string;
-  fr: string;
-  "x-jat": string;
-}
-
-interface ITVDBEpisode {
-  tvdbShowId: number;
-  tvdbId: number;
-  seasonNumber: number;
-  episodeNumber: number;
-  absoluteEpisodeNumber: number;
-  title: EpisodeTitle;
-  airDate: string;
-  airDateUtc: string;
-  runtime: number;
-  overview: string;
-  image: string;
-  episode: string;
-  anidbEid: number;
-  length: number;
-  airdate: string;
-  rating: string;
-  summary: string;
-}
-
-interface TVDBEpisodes {
-  [key: string]: ITVDBEpisode;
-}
-
-interface Series {
-  titles: Titles;
-  episodes: TVDBEpisodes;
-}
-
+const convertStatus = (status: string) => {
+  switch (status.toUpperCase()) {
+    case "RELEASING":
+      return "Currently Airing";
+    case "FINISHED":
+      return "Series Completed";
+    case "NOT_YET_RELEASED":
+    case "NOT_YET_AIRED":
+      return "Coming Soon";
+    case "CANCELLED":
+      return "Discontinued";
+    case "HIATUS":
+      return "On Break";
+    default:
+      return "Unknown";
+  }
+};
 
 export const mergeMappings = (
   tvdbInfo: TVDBInfoRes | undefined,
@@ -87,6 +55,7 @@ export const mergeMappings = (
   gogo: { sub: GogoInfo | undefined; dub: GogoInfo | undefined },
   kitsu: KitsuInfo | undefined,
   mal: IAnimeData | undefined,
+  tmdb: TMDBInfo | undefined,
 ) => {
   const mergeDefinedProps = <T extends object>(...objects: (Record<string, T> | undefined)[]) => {
     const result: Record<string, unknown> = {};
@@ -109,6 +78,7 @@ export const mergeMappings = (
         ...(gogo.sub?.genres ?? []),
         ...(gogo.dub?.genres ?? []),
         ...(kitsu?.genres ?? []),
+        ...(tmdb?.genres ?? []),
         ...(mal?.genres?.map((genre) => genre.name) ?? []),
       ].filter(Boolean),
     ),
@@ -147,16 +117,16 @@ export const mergeMappings = (
     ...mergeDefinedProps(anilistInfo, mal, anidbInfo, tvdbInfo, kitsu),
     title,
     season: anilistInfo.season || "",
-    status: anilistInfo.status,
+    status: convertStatus(anilistInfo.status),
+    characters: anilistInfo.characters,
     id: anilistInfo.id,
     ...(artworks.length > 0 && { artworks }),
     ...(synonyms.length > 0 && { synonyms }),
     ...(genres.length > 0 && { genres }),
     ...(tags.length > 0 && { tags }),
-  };
+  } as MappingAnime;
 
   if (tvdbInfo?.coverImage || kitsu?.coverImage || anilistInfo.coverImage) {
-    // @ts-expect-error
     result.coverImage = tvdbInfo?.coverImage || kitsu?.coverImage || anilistInfo.coverImage;
   }
 
@@ -165,7 +135,6 @@ export const mergeMappings = (
     kitsu?.bannerImage ||
     tvdbInfo?.artworks?.find((art) => art.type === "banner")?.image;
   if (bannerImage) {
-    // @ts-expect-error
     result.bannerImage = bannerImage;
   }
 
@@ -178,6 +147,7 @@ export interface MergedEpisode {
   rating?: number;
   image?: string | null;
   updatedAt?: number;
+  season?: number | null;
   number?: number;
   description?: string | null;
   id: string;
@@ -194,6 +164,16 @@ interface MergedOutput {
   };
 }
 
+// 😭🙏
+interface M2 {
+  sub: MatchResult | null | undefined;
+  dub: MatchResult | null | undefined;
+}
+
+interface ActualMapping {
+  [key: string]: MatchResult | M2 | null | undefined;
+}
+
 export const mergeEpisodes = (
   gogoEpisodeSub: GogoEpisode[] | undefined,
   gogoEpisodeDub: GogoEpisode[] | undefined,
@@ -201,6 +181,7 @@ export const mergeEpisodes = (
   anidbEpisode: Episode[] | undefined,
   malEpisode: Episode[] | undefined,
   tvdbEpisode: TVDBEpisode[] | undefined,
+  tmdbEpisode: TVDBEpisode[] | undefined,
 ): MergedOutput => {
   const output: MergedOutput = {
     hianime: { sub: [], dub: [] },
@@ -216,16 +197,18 @@ export const mergeEpisodes = (
       const malEp = findEpisodeByNumber(malEpisode, hiEp.number);
       const tvdbEp = findEpisodeByNumber(tvdbEpisode, hiEp.number);
       const anidbEp = findEpisodeByNumber(anidbEpisode, hiEp.number);
+      const tmdbEp = findEpisodeByNumber(tmdbEpisode, hiEp.number);
 
       const mergedEpisode: MergedEpisode = {
         id: hiEp.id,
         number: hiEp.number,
-        title: malEp?.title || hiEp?.title || tvdbEp?.title,
+        title: malEp?.title || tvdbEp?.title || tmdbEp?.title || anidbEp?.title || hiEp?.title,
         isFiller: malEp?.isFiller,
-        image: tvdbEp?.image ?? malEp?.image ?? anidbEp?.image,
+        image: tvdbEp?.image ?? tmdbEp?.image ?? malEp?.image ?? anidbEp?.image,
         updatedAt: tvdbEp?.updatedAt,
         description: tvdbEp?.description,
-        rating: malEp?.rating,
+        rating: (tmdbEp?.rating as number) ?? malEp?.rating,
+        season: tvdbEp?.seasonNumber,
       };
 
       output.hianime.sub.push(mergedEpisode);
@@ -237,16 +220,18 @@ export const mergeEpisodes = (
       const malEp = findEpisodeByNumber(malEpisode, gogoEp.number);
       const tvdbEp = findEpisodeByNumber(tvdbEpisode, gogoEp.number);
       const anidbEp = findEpisodeByNumber(anidbEpisode, gogoEp.number);
+      const tmdbEp = findEpisodeByNumber(tmdbEpisode, gogoEp.number);
 
       const mergedEpisode: MergedEpisode = {
         id: gogoEp.id,
         number: gogoEp.number,
-        title: malEp?.title || tvdbEp?.title,
+        title: malEp?.title || tvdbEp?.title || tmdbEp?.title || anidbEp?.title,
         isFiller: malEp?.isFiller,
-        image: tvdbEp?.image ?? malEp?.image ?? anidbEp?.image,
+        image: tvdbEp?.image ?? tmdbEp?.image ?? malEp?.image ?? anidbEp?.image,
         updatedAt: tvdbEp?.updatedAt,
         description: tvdbEp?.description,
-        rating: malEp?.rating,
+        rating: (tmdbEp?.rating as number) ?? malEp?.rating,
+        season: tvdbEp?.seasonNumber,
       };
 
       output.gogoanime.sub.push(mergedEpisode);
@@ -258,16 +243,18 @@ export const mergeEpisodes = (
       const malEp = findEpisodeByNumber(malEpisode, gogoEp.number);
       const tvdbEp = findEpisodeByNumber(tvdbEpisode, gogoEp.number);
       const anidbEp = findEpisodeByNumber(anidbEpisode, gogoEp.number);
+      const tmdbEp = findEpisodeByNumber(tmdbEpisode, gogoEp.number);
 
       const mergedEpisode: MergedEpisode = {
         id: gogoEp.id,
         number: gogoEp.number,
-        title: malEp?.title || tvdbEp?.title,
+        title: malEp?.title || tvdbEp?.title || tmdbEp?.title || anidbEp?.title,
         isFiller: malEp?.isFiller,
-        image: tvdbEp?.image ?? malEp?.image ?? anidbEp?.image,
+        image: tvdbEp?.image ?? tmdbEp?.image ?? malEp?.image ?? anidbEp?.image,
         updatedAt: tvdbEp?.updatedAt,
         description: tvdbEp?.description,
-        rating: malEp?.rating,
+        rating: (tmdbEp?.rating as number) ?? malEp?.rating,
+        season: tvdbEp?.seasonNumber,
       };
 
       output.gogoanime.dub.push(mergedEpisode);
@@ -276,27 +263,6 @@ export const mergeEpisodes = (
 
   return output;
 };
-
-const getAnizipEpisodes = async (id: number) => {
-  const res = await lycen.get<Series>(`https://api.ani.zip/mappings?anilist_id=${id}`);
-
-  const episodes: TVDBEpisode[] = [];
-
-  for (const episodeKey in res.data.episodes) {
-    const episode = res.data.episodes[episodeKey];
-
-    episodes.push({
-      id: `${episode.tvdbId}`,
-      description: episode.overview ?? episode.summary,
-      image: episode.image,
-      updatedAt: new Date(episode.airDateUtc).getTime(),
-      number: episode.absoluteEpisodeNumber,
-      title: episode.title.en || episode.title["x-jat"] || episode.title.ja
-    })
-  }
-
-  return episodes;
-}
 
 interface MappingTitle {
   romaji: string;
@@ -425,7 +391,7 @@ export interface MappingAnime {
   endDate: string;
   studios: string[];
   type: string;
-  characters: string[];
+  characters: IParsedCharacter[];
   recommendations: MappingRecommendation[];
   relations: MappingRelation[];
   data: {
@@ -475,7 +441,7 @@ export interface MappingAnime {
     demographics: MappingGenre[];
   };
   streamEpisodes: MappingEpisodes;
-  mappings: MatchResult[];
+  mappings: ActualMapping;
 }
 
 // This function is hella slow. If any of you are expert and can help pls send help.
@@ -485,7 +451,7 @@ export const generateMappings = async (id: number) => {
     try {
       return await promise;
     } catch (error) {
-      console.error(error);
+      console.error(`Error executing promise: ${(error as Error).message}`);
       return undefined;
     }
   };
@@ -499,6 +465,7 @@ export const generateMappings = async (id: number) => {
     anilistToMalAnimeRes,
     anilistToTVDBRes,
     anilist,
+    anilistToTmdbRes,
   ] = await Promise.all([
     safePromise(anilistToAniDB(id)),
     safePromise(anilistToGogo(id)),
@@ -507,14 +474,16 @@ export const generateMappings = async (id: number) => {
     safePromise(anilistToMalAnime(id)),
     safePromise(anilistToTVDB(id)),
     safePromise(getInfo(id)),
+    safePromise(anilistToTmdb(id)),
   ]);
 
-  // If anilist info couldn't be fetched, we can't proceed
+  // If anilist info couldn't be fetched, we can't proceed since it's the base provider
   if (!anilist) {
     throw new Error("Failed to fetch essential Anilist information");
   }
 
   const mappings = {
+    // Hardcode anilist mapping
     anilist: {
       index: 0,
       similarity: 1,
@@ -526,27 +495,29 @@ export const generateMappings = async (id: number) => {
           anilist.title.native,
           anilist.title.userPreferred,
         ],
-        id: anilist.id,
+        id: String(anilist.id),
         image: anilist.coverImage,
         url: `https://anilist.co/anime/${anilist.id}`,
       },
       matchType: "strict",
-    },
+    } as MatchResult,
     hianime: anilistToHianimeRes,
     anidb: anilistToAniDBRes,
     gogo: anilistToGogoRes,
     kitsu: anilistToKitsuRes,
     mal: anilistToMalAnimeRes,
     tvdb: anilistToTVDBRes,
-  };
+    tmdb: anilistToTmdbRes,
+  } as ActualMapping;
 
-  const gogoIdSub = mappings.gogo?.sub?.bestMatch.id;
-  const gogoIdDub = mappings.gogo?.dub?.bestMatch.id;
-  const anidbId = mappings.anidb?.bestMatch?.id;
-  const hianimeId = mappings.hianime?.bestMatch?.id;
-  const kitsuId = mappings.kitsu?.bestMatch?.id;
-  const malId = mappings.mal?.bestMatch?.id;
-  const tvdbId = mappings.tvdb?.bestMatch?.id;
+  const gogoIdSub = (mappings.gogo as M2)?.sub?.bestMatch.id;
+  const gogoIdDub = (mappings.gogo as M2)?.dub?.bestMatch.id;
+  const anidbId = (mappings.anidb as MatchResult)?.bestMatch?.id;
+  const hianimeId = (mappings.hianime as MatchResult)?.bestMatch?.id;
+  const kitsuId = (mappings.kitsu as MatchResult)?.bestMatch?.id;
+  const malId = (mappings.mal as MatchResult)?.bestMatch?.id;
+  const tvdbId = (mappings.tvdb as MatchResult)?.bestMatch?.id;
+  const tmdbId = (mappings.tmdb as MatchResult)?.bestMatch?.id;
 
   // Second batch of parallel requests
   const [gogoInfo, gogoInfoDub, gogoEpisodeSub, gogoEpisodeDub] = await Promise.all([
@@ -574,7 +545,20 @@ export const generateMappings = async (id: number) => {
 
   const [tvdbInfo, tvdbEpisode] = await Promise.all([
     safePromise(tvdbId ? getTVDBInfo(tvdbId) : Promise.resolve(undefined)),
-    safePromise(tvdbId ? getAnizipEpisodes(id): Promise.resolve(undefined)),
+    safePromise(
+      tvdbId
+        ? getTVDBEpisode(tvdbId, anilist.seasonYear, anilist.episodes)
+        : Promise.resolve(undefined),
+    ),
+  ]);
+
+  const [tmdbInfo, tmdbEpisode] = await Promise.all([
+    safePromise(tmdbId ? getTMDBInfo(tmdbId) : Promise.resolve(undefined)),
+    safePromise(
+      tmdbId
+        ? getTMDBEpisode(tmdbId, anilist.seasonYear, anilist.episodes)
+        : Promise.resolve(undefined),
+    ),
   ]);
 
   return {
@@ -585,6 +569,7 @@ export const generateMappings = async (id: number) => {
       { sub: gogoInfo, dub: gogoInfoDub },
       kitsuInfo,
       malInfo,
+      tmdbInfo,
     ),
     mappings,
     streamEpisodes: mergeEpisodes(
@@ -594,6 +579,7 @@ export const generateMappings = async (id: number) => {
       anidbEpisode,
       malEpisodes,
       tvdbEpisode,
+      tmdbEpisode,
     ),
-  } as unknown as MappingAnime;
+  } as MappingAnime;
 };
