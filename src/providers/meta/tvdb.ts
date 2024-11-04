@@ -1,4 +1,5 @@
 import type { AxiosResponse } from "axios";
+import { write } from "bun";
 import { TVDB_API, TVDB_KEYS, TVDB_URL } from "../../constants";
 import lycen from "../../helpers/request";
 import type { Artwork, SearchResult } from "../../types";
@@ -277,9 +278,23 @@ export interface TVDBEpisode {
   [key: string]: unknown;
 }
 
-export async function getTVDBEpisode(id: string, year: number, length: number) {
+export async function getTVDBEpisode(id: string, yearRange?: string) {
   const token = await getToken(TVDB_KEYS[Math.floor(Math.random() * TVDB_KEYS.length)]);
   if (!token) return undefined;
+
+  let startYear: number | undefined;
+  let endYear: number | undefined;
+  const isYearRange = yearRange?.includes("-");
+
+  if (yearRange) {
+    const parts = yearRange.split("-");
+    if (parts.length === 2) {
+      startYear = Number(parts[0]);
+      endYear = Number(parts[1]);
+    } else {
+      startYear = Number(yearRange);
+    }
+  }
 
   const episodes: TVDBEpisode[] = [];
 
@@ -289,9 +304,7 @@ export async function getTVDBEpisode(id: string, year: number, length: number) {
     },
   });
 
-  const infoSeasons = res.data.seasons;
-
-  const relevantSeasons = infoSeasons;
+  const relevantSeasons = res.data.seasons;
 
   const seasonRequests = relevantSeasons
     ?.map((season) =>
@@ -307,7 +320,7 @@ export async function getTVDBEpisode(id: string, year: number, length: number) {
             isMovie: number;
             number: number;
             absoluteNumber: number;
-            seasonNumber: 1;
+            seasonNumber: number;
             runtime: number;
             aired: number;
             seriesId: number;
@@ -339,7 +352,7 @@ export async function getTVDBEpisode(id: string, year: number, length: number) {
               isMovie: number;
               number: number;
               absoluteNumber: number;
-              seasonNumber: 1;
+              seasonNumber: number;
               runtime: number;
               aired: number;
               seriesId: number;
@@ -349,30 +362,41 @@ export async function getTVDBEpisode(id: string, year: number, length: number) {
             }[];
           };
         },
-        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-        any
+        unknown
       >
     >[],
   );
+
+  let maxYear = Number.NEGATIVE_INFINITY;
+
+  for (const response of seasonResponses) {
+    if (response?.data.data.episodes?.length) {
+      const episodeYears = response.data.data.episodes.map(ep => new Date(ep.aired).getFullYear());
+      const currentMaxYear = Math.max(...episodeYears);
+      if (currentMaxYear > maxYear) {
+        maxYear = currentMaxYear;
+      }
+    }
+  }
 
   for (const seasonResponse of seasonResponses) {
     if (!seasonResponse) continue;
 
     const seasonInfo = seasonResponse?.data.data;
+    if (!seasonInfo?.episodes) continue;
 
-    const seasonMatches =
-      (Number(seasonInfo?.year) === Number(year) ||
-        seasonInfo?.episodes.some((ep) => new Date(ep.aired).getFullYear() === year)) &&
-      Math.abs(seasonInfo?.episodes.length - length) <= 1;
+    const list = seasonInfo.episodes;
 
-    if (!seasonMatches) continue;
-
-    const list = seasonInfo?.episodes;
-    if (!list) continue;
-
-    const relevantEpisodes = list.filter(
-      (episode) => new Date(episode.aired).getFullYear() === year,
-    );
+    // Filter episodes based on their air date instead of season year
+    const relevantEpisodes = list.filter((episode) => {
+      if (!startYear) return true;
+      
+      const episodeYear = new Date(episode.aired).getFullYear();
+      if (isYearRange && endYear) {
+        return episodeYear >= startYear && episodeYear <= endYear;
+      }
+      return episodeYear >= startYear;
+    });
 
     const translationRequests = relevantEpisodes.map((episode) =>
       lycen
@@ -386,7 +410,7 @@ export async function getTVDBEpisode(id: string, year: number, length: number) {
             isMovie: number;
             number: number;
             absoluteNumber: number;
-            seasonNumber: 1;
+            seasonNumber: number;
             runtime: number;
             aired: number;
             seriesId: number;
@@ -400,7 +424,7 @@ export async function getTVDBEpisode(id: string, year: number, length: number) {
           },
         })
         .catch(() => ({
-          data: async () => ({
+          data: () => ({
             data: {
               name: episode.name,
               overview: episode.overview,
@@ -414,17 +438,14 @@ export async function getTVDBEpisode(id: string, year: number, length: number) {
     for (let i = 0; i < relevantEpisodes.length; i++) {
       const episode = relevantEpisodes[i];
       // @ts-expect-error
-      const translations = translationResponses[i]?.data.data
-      
+      const translations = translationResponses[i]?.data.data;
 
       episodes.push({
         id: String(episode.id),
-        // biome-ignore lint/complexity/useOptionalChain: <explanation>
-        description: translations && translations.overview ? translations.overview : "TBD",
+        description: translations?.overview ?? "TBD",
         image: episode.image as string,
         number: episode.number,
-        // biome-ignore lint/complexity/useOptionalChain: <explanation>
-        title: translations && translations.name ? translations.name : "TBD",
+        title: translations?.name ?? "TBD",
         updatedAt: new Date(episode.aired).getTime(),
         seasonNumber: episode.seasonNumber,
         airDate: new Date(episode.aired).toISOString(),
@@ -432,24 +453,39 @@ export async function getTVDBEpisode(id: string, year: number, length: number) {
     }
   }
 
-  const uniqueEpisodes = episodes.reduce((acc, current) => {
-    const existingEpisode = acc.find(
-      (ep) => ep.number === current.number && ep.seasonNumber === current.seasonNumber,
-    );
+  const uniqueEpisodes = Array.from(
+    episodes
+      .reduce((map, episode) => {
+        if (!map.has(episode.title)) {
+          map.set(episode.title, episode);
+        }
+        return map;
+      }, new Map<string, TVDBEpisode>())
+      .values(),
+  );
 
-    if (!existingEpisode) {
-      acc.push(current);
-    } else {
-      const existingYearDiff = Math.abs(new Date(existingEpisode.airDate).getFullYear() - year);
-      const currentYearDiff = Math.abs(new Date(current.airDate).getFullYear() - year);
+  const finalEpisodes = uniqueEpisodes.sort((a, b) => {
+    const yearA = new Date(a.airDate).getFullYear();
+    const yearB = new Date(b.airDate).getFullYear();
+    if (yearA !== yearB) return yearA - yearB;
+    return a.number - b.number;
+  });
 
-      if (currentYearDiff < existingYearDiff) {
-        const index = acc.indexOf(existingEpisode);
-        acc[index] = current;
-      }
+  let currentNumber = 1;
+  let lastYear = 0;
+
+  return finalEpisodes.map((episode) => {
+    const episodeYear = new Date(episode.airDate).getFullYear();
+    if (episodeYear !== lastYear) {
+      currentNumber = 1;
+      lastYear = episodeYear;
     }
-    return acc;
-  }, [] as TVDBEpisode[]);
 
-  return uniqueEpisodes.sort((a, b) => a.number - b.number);
+    return {
+      ...episode,
+      number: currentNumber++,
+    };
+  });
 }
+
+await write("index.json", JSON.stringify(await getTVDBEpisode("/series/81797", "1999-2024")));

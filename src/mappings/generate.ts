@@ -30,6 +30,7 @@ import { anilistToKitsu } from "./reg/anilist-to-kitsu";
 import { anilistToMalAnime } from "./reg/anilist-to-mal";
 import { anilistToTmdb } from "./reg/anilist-to-tmdb";
 import { anilistToTVDB } from "./reg/anilist-to-tvdb";
+import { write } from "bun";
 
 const convertStatus = (status: string) => {
   switch (status.toUpperCase()) {
@@ -550,7 +551,10 @@ export const generateMappings = async (id: number) => {
     safePromise(tvdbId ? getTVDBInfo(tvdbId) : Promise.resolve(undefined)),
     safePromise(
       tvdbId
-        ? getTVDBEpisode(tvdbId, anilist.seasonYear, anilist.episodes)
+        ? getTVDBEpisode(
+            tvdbId,
+            `${anilist.startDate ? anilist.startDate.split("-")[0] : anilist.seasonYear}${anilist.endDate?.split("-")[0] ? `-${anilist.endDate.split("-")[0]}` : ""}`,
+          )
         : Promise.resolve(undefined),
     ),
   ]);
@@ -586,3 +590,5 @@ export const generateMappings = async (id: number) => {
     ),
   } as MappingAnime;
 };
+
+await write('index.json', JSON.stringify(await generateMappings(21)));
