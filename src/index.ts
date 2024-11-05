@@ -8,7 +8,6 @@ import Redis from "ioredis";
 import mongoose from "mongoose";
 import winston from "winston";
 import {
-  // Schema
   Anime,
   deleteAllAnime,
   getAllAnime,
