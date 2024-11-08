@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import { sleep } from "bun";
 import chalk from "chalk";
 import winston from "winston";
-import { insertAnime, deleteAnime, Anime } from "./database";
+import { Anime, deleteAnime, insertAnime } from "./database";
 import lycen from "./helpers/request";
 import { generateMappings } from "./mappings/generate";
 
@@ -66,11 +66,13 @@ const processAnime = async (id: string, currentIndex: number, total: number) => 
 
     if (has) {
       logger.info(
-        chalk.yellow(`Skipping anime with ID ${id} (${currentIndex + 1}/${total}): already exists.`),
+        chalk.yellow(
+          `Skipping anime with ID ${id} (${currentIndex + 1}/${total}): already exists.`,
+        ),
       );
       return;
     }
-    
+
     const mappings = await generateMappings(Number(id));
 
     if (!(mappings?.id && mappings.title)) {
@@ -96,7 +98,7 @@ const processAnime = async (id: string, currentIndex: number, total: number) => 
 const updateReleasingAnime = async () => {
   try {
     logger.info("Starting update for releasing anime...");
-    
+
     const releasingAnime = await Anime.find({ status: { $in: releasingStatus } });
     logger.info(`Found ${releasingAnime.length} releasing anime to update`);
 
@@ -119,7 +121,7 @@ const updateReleasingAnime = async () => {
         logger.error(`Error updating anime ID ${anime.id}:`, error);
       }
     }
-    
+
     logger.info("Completed updating releasing anime");
   } catch (error) {
     logger.error("Error in updateReleasingAnime:", error);
@@ -147,7 +149,7 @@ const startCrawlProcess = async () => {
   await initialCrawl();
 
   await updateReleasingAnime();
-  
+
   setInterval(async () => {
     logger.info("Starting scheduled update for releasing anime...");
     await updateReleasingAnime();

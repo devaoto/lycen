@@ -371,7 +371,9 @@ export async function getTVDBEpisode(id: string, yearRange?: string) {
 
   for (const response of seasonResponses) {
     if (response?.data.data.episodes?.length) {
-      const episodeYears = response.data.data.episodes.map(ep => new Date(ep.aired).getFullYear());
+      const episodeYears = response.data.data.episodes.map((ep) =>
+        new Date(ep.aired).getFullYear(),
+      );
       const currentMaxYear = Math.max(...episodeYears);
       if (currentMaxYear > maxYear) {
         maxYear = currentMaxYear;
@@ -390,7 +392,7 @@ export async function getTVDBEpisode(id: string, yearRange?: string) {
     // Filter episodes based on their air date instead of season year
     const relevantEpisodes = list.filter((episode) => {
       if (!startYear) return true;
-      
+
       const episodeYear = new Date(episode.aired).getFullYear();
       if (isYearRange && endYear) {
         return episodeYear >= startYear && episodeYear <= endYear;

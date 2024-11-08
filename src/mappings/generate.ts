@@ -1,3 +1,4 @@
+import { write } from "bun";
 import type { MatchResult } from "../helpers/similarity";
 import {
   type GogoEpisode,
@@ -30,7 +31,6 @@ import { anilistToKitsu } from "./reg/anilist-to-kitsu";
 import { anilistToMalAnime } from "./reg/anilist-to-mal";
 import { anilistToTmdb } from "./reg/anilist-to-tmdb";
 import { anilistToTVDB } from "./reg/anilist-to-tvdb";
-import { write } from "bun";
 
 const convertStatus = (status: string) => {
   switch (status.toUpperCase()) {
@@ -591,4 +591,4 @@ export const generateMappings = async (id: number) => {
   } as MappingAnime;
 };
 
-await write('index.json', JSON.stringify(await generateMappings(21)));
+await write("index.json", JSON.stringify(await generateMappings(21)));

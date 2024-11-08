@@ -7,13 +7,7 @@ import { timeout } from "hono/timeout";
 import Redis from "ioredis";
 import mongoose from "mongoose";
 import winston from "winston";
-import {
-  Anime,
-  deleteAllAnime,
-  getAllAnime,
-  getAnime,
-  insertAnime,
-} from "./database";
+import { Anime, deleteAllAnime, getAllAnime, getAnime, insertAnime } from "./database";
 import { generateMappings } from "./mappings/generate";
 
 const customFormat = winston.format.combine(
@@ -195,12 +189,8 @@ app.get("/info/:id", async (ctx) => {
       const cacheTTL = validStatus.includes(mapping.status) ? 30 * 24 * 60 * 60 : 12 * 60 * 60;
       await redis.setex(cacheKey, cacheTTL, JSON.stringify(mapping));
 
-      if (validStatus.includes(mapping.status)) {
-        const updated = await insertAnime(mapping);
-        return ctx.json(updated);
-      }
-
-      return ctx.json(mapping);
+      const updated = await insertAnime(mapping);
+      return ctx.json(updated);
     }
 
     return ctx.json({ message: "Anime not found" }, 404);
