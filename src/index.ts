@@ -1,3 +1,4 @@
+import type { HttpBindings } from "@hono/node-server";
 import chalk from "chalk";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -7,7 +8,7 @@ import { timeout } from "hono/timeout";
 import Redis from "ioredis";
 import mongoose from "mongoose";
 import winston from "winston";
-import { Anime, deleteAllAnime, getAllAnime, getAnime, insertAnime } from "./database";
+import { Anime, deleteAllAnime, getAllAnime, getAnime, insertAnime, updateAnime } from "./database";
 import { generateMappings } from "./mappings/generate";
 
 const customFormat = winston.format.combine(
@@ -59,7 +60,7 @@ winstonLogger.info("Successfully connected to different databases", {
   databases: [{ name: "Redis" }, { name: "MongoDB" }],
 });
 
-const app = new Hono();
+const app = new Hono<{ Bindings: HttpBindings }>();
 
 app.use(cors());
 app.use(prettyJSON());
@@ -73,7 +74,7 @@ app.use("*", async (ctx, next) => {
     ctx.req.header("x-forwarded-for") ||
     ctx.req.header("x-real-ip") ||
     ctx.req.header("cf-connecting-ip") ||
-    (ctx.env as { cf: { ip: string } })?.cf?.ip ||
+    ctx.env.incoming.socket.remoteAddress ||
     "unknown";
 
   winstonLogger.info(`Incoming ${ctx.req.method} request`, {
@@ -187,9 +188,18 @@ app.get("/info/:id", async (ctx) => {
 
     if (mapping.id) {
       const cacheTTL = validStatus.includes(mapping.status) ? 30 * 24 * 60 * 60 : 12 * 60 * 60;
-      await redis.setex(cacheKey, cacheTTL, JSON.stringify(mapping));
 
-      const updated = await insertAnime(mapping);
+      if (validStatus.includes(mapping.status)) {
+        await redis.setex(cacheKey, cacheTTL, JSON.stringify(mapping));
+
+        const updated = await insertAnime(mapping);
+        return ctx.json(updated);
+      }
+
+      const updatedMappings = await generateMappings(Number(id));
+      await redis.setex(cacheKey, cacheTTL, JSON.stringify(updatedMappings));
+
+      const updated = await updateAnime(id, updatedMappings);
       return ctx.json(updated);
     }
 
