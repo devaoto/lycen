@@ -14,9 +14,11 @@
     "format": "bunx biome format --write .",
     "check": "bunx biome check --write .",
     "crawl": "bun run src/script.ts",
-    "start": "bun run src/index.ts"
+    "start": "bun run src/index.ts",
+    "update": "bun run src/update.ts"
   },
   "dependencies": {
+    "@hono/node-server": "^1.13.5",
     "axios": "^1.7.7",
     "chalk": "^5.3.0",
     "cheerio": "^1.0.0",

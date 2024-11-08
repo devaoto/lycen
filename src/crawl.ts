@@ -8,11 +8,11 @@ import { generateMappings } from "./mappings/generate";
 
 const lastIDFile = "last_id.json";
 const INITIAL_DELAY = 1000;
-const UPDATE_INTERVAL = 5 * 60 * 60 * 1000; // 5 hours in milliseconds
+export const UPDATE_INTERVAL = 10 * 60 * 60 * 1000; // 10 hours in milliseconds
 
 const releasingStatus = ["Currently Airing", "Coming Soon", "On Break", "Unknown"];
 
-const logger = winston.createLogger({
+export const logger = winston.createLogger({
   level: "info",
   format: winston.format.combine(
     winston.format.timestamp(),
@@ -149,11 +149,8 @@ const startCrawlProcess = async () => {
   await initialCrawl();
 
   await updateReleasingAnime();
-
-  setInterval(async () => {
-    logger.info("Starting scheduled update for releasing anime...");
-    await updateReleasingAnime();
-  }, UPDATE_INTERVAL);
 };
+
+export { updateReleasingAnime };
 
 export default startCrawlProcess;
