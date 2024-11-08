@@ -1,4 +1,4 @@
-import { write } from "bun";
+// import { write } from "bun";
 import type { MatchResult } from "../helpers/similarity";
 import {
   type GogoEpisode,
@@ -591,4 +591,4 @@ export const generateMappings = async (id: number) => {
   } as MappingAnime;
 };
 
-await write("index.json", JSON.stringify(await generateMappings(21)));
+// await write("index.json", JSON.stringify(await generateMappings(21)));

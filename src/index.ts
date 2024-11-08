@@ -9,7 +9,7 @@ import Redis from "ioredis";
 import mongoose from "mongoose";
 import winston from "winston";
 import { Anime, deleteAllAnime, getAllAnime, getAnime, insertAnime, updateAnime } from "./database";
-import { generateMappings } from "./mappings/generate";
+import { generateMappings, type MappingAnime } from "./mappings/generate";
 
 const customFormat = winston.format.combine(
   winston.format.timestamp(),
@@ -61,6 +61,68 @@ winstonLogger.info("Successfully connected to different databases", {
 });
 
 const app = new Hono<{ Bindings: HttpBindings }>();
+
+interface AnimeRecommendation {
+  title: {
+    english?: string | null;
+    romaji?: string | null;
+    native?: string | null;
+    userPreferred?: string | null;
+  };
+  id: string;
+  coverImage: string;
+  bannerImage: string;
+  description: string;
+  episodes: number;
+  status: string;
+  genres: string[];
+  tags: string[];
+  studios: string[];
+  themes: { mal_id: number; type: string; name: string; url: string; }[];
+}
+
+export async function getRecommendations(anime: MappingAnime): Promise<AnimeRecommendation[]> {
+  const { genres, tags, data } = anime;
+
+  const query = {
+    $and: [
+      { genres: { $in: genres }, "genres.length": { $gte: 2 } },
+      { tags: { $in: tags }, "tags.length": { $gte: 3 } },
+      { "data.themes": { $in: data.themes }, "data.themes.length": { $gte: 1 } },
+    ],
+    id: { $ne: anime.id },
+  };
+
+  const recommendations = await Anime.find(query, {
+    title: 1,
+    id: 1,
+    coverImage: 1,
+    bannerImage: 1,
+    description: 1,
+    episodes: 1,
+    status: 1,
+    genres: 1,
+    tags: 1,
+    studios: 1,
+    "data.themes": 1,
+  })
+    .limit(10)
+    .lean();
+
+  return recommendations.map((rec) => ({
+    title: rec.title,
+    id: String(rec.id),
+    coverImage: rec.coverImage,
+    bannerImage: rec.bannerImage,
+    description: rec.description,
+    episodes: rec.episodes,
+    studios: rec.studios,
+    themes: rec.data.themes,
+    status: rec.status,
+    genres: rec.genres,
+    tags: rec.tags,
+  }));
+}
 
 app.use(cors());
 app.use(prettyJSON());
@@ -208,6 +270,29 @@ app.get("/info/:id", async (ctx) => {
 
   await redis.setex(cacheKey, 12 * 60 * 60, JSON.stringify(anime));
   return ctx.json(anime);
+});
+
+app.get("/recommendations/:id", async (ctx) => {
+  const { id } = ctx.req.param();
+
+  if (!id) throw new HTTPException(400, { message: "ID is required." });
+
+  const cacheKey = `recommendations:${id}`;
+  const cachedData = await redis.get(cacheKey);
+
+  if (cachedData) {
+    return ctx.json(JSON.parse(cachedData));
+  }
+
+  const anime = await getAnime(id);
+  if (!anime?.id) {
+    return ctx.json({ message: "Anime not found" }, 404);
+  }
+
+  const recommendations = await getRecommendations(anime);
+  await redis.setex(cacheKey, 3600, JSON.stringify(recommendations));
+
+  return ctx.json(recommendations);
 });
 
 app.get("/search", async (ctx) => {
