@@ -136,7 +136,6 @@ app.use("*", async (ctx, next) => {
     ctx.req.header("x-forwarded-for") ||
     ctx.req.header("x-real-ip") ||
     ctx.req.header("cf-connecting-ip") ||
-    ctx.env.incoming.socket.remoteAddress ||
     "unknown";
 
   winstonLogger.info(`Incoming ${ctx.req.method} request`, {
@@ -307,6 +306,7 @@ app.get("/search", async (ctx) => {
       id,
       idMal,
       fields,
+      country,
       page = "1",
       limit = "20",
     } = ctx.req.query();
@@ -344,6 +344,10 @@ app.get("/search", async (ctx) => {
       query.status = status;
     }
 
+    if(country) {
+      query.countryOfOrigin = country;
+    }
+
     if (id) {
       query.id = Number(id);
     }
@@ -362,6 +366,7 @@ app.get("/search", async (ctx) => {
       season: 1,
       genres: 1,
       tags: 1,
+      countryOfOrigin: 1,
       synonyms: 1,
       idMal: 1,
       _id: 0,
@@ -394,6 +399,7 @@ app.get("/search", async (ctx) => {
       fields,
       page,
       limit,
+      country,
     })}`;
 
     const cachedData = await redis.get(cacheKey);
